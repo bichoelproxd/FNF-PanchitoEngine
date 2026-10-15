@@ -1,0 +1,60 @@
+name: OpenCode
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request:
+    types: [opened, synchronized, reopened]
+  workflow_dispatch:
+    inputs:
+      prompt:
+        description: "Instrucción para OpenCode"
+        required: true
+
+# Permisos requeridos para que OpenCode interactúe con el repositorio
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write
+
+jobs:
+  opencode-job:
+    name: Ejecutar OpenCode en Red Privada
+    # Solo se ejecuta si se invoca con comandos en comentarios o mediante trigger manual
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'issue_comment' && (contains(github.event.comment.body, '/opencode') || contains(github.event.comment.body, '/oc')))
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Descargar el código del repositorio
+      - name: Checkout Código
+        uses: actions/checkout@v4
+
+      # 2. Conectar el Runner a la red de Tailscale
+      - name: Conectar a Tailscale
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci # Asegúrate de que este tag esté configurado en tus ACLs de Tailscale
+
+      # 3. Validar conectividad interna (Opcional - útil para depurar)
+      - name: Probar conexión interna
+        run: |
+          echo "Verificando acceso a recursos protegidos en la Tailnet..."
+          # ping -c 2 tu-servidor-mcp-interno.tailnet-zone.ts.net
+
+      # 4. Ejecutar el Agente de IA OpenCode
+      - name: Ejecutar OpenCode
+        uses: marketplace/actions/opencode-github-action@v4
+        with:
+          model: "gpt-4o" # Cambia por tu modelo configurado
+          use_github_token: "true"
+          prompt: ${{ github.event.inputs.prompt }}
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+          # Si usas proxies locales u endpoints como Aperture dentro de Tailscale, descomenta abajo:
+          # OPENAI_BASE_URL: "http://ts.net"
+          
